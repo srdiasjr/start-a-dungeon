@@ -1,0 +1,14 @@
+build/
+build-release/
+.cache/
+.tools/
+*.exe
+*.obj
+*.o
+*.a
+*.dll
+compile_commands.json
+CMakeUserPresets.json
+.vs/
+.idea/
+out/

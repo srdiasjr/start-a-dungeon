@@ -1,0 +1,13 @@
+{
+  "version": 4,
+  "configurations": [
+    {
+      "name": "Win32",
+      "compilerPath": "C:/Users/lucas.dias4/AppData/Local/w64devkit/w64devkit/bin/g++.exe",
+      "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+      "cStandard": "c17",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "windows-gcc-x64"
+    }
+  ]
+}

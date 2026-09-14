@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Rodar jogo",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/jogo_novo.exe",
+      "args": [],
+      "cwd": "${workspaceFolder}/build",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "C:/Users/lucas.dias4/AppData/Local/w64devkit/w64devkit/bin/gdb.exe",
+      "preLaunchTask": "Compilar"
+    }
+  ]
+}
