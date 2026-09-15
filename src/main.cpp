@@ -1733,7 +1733,9 @@ bool AtualizarUIPortal(
 bool AtualizarUIStats(Personagem* jogador, bool* aberto) {
     if (!*aberto) return false;
 
-    if (IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_C)) {
+    // C ja e tratado no loop principal (toggle). Aqui so Esc fecha,
+    // senao IsKeyPressed(KEY_C) ainda vale neste frame e fecha na hora de abrir.
+    if (IsKeyPressed(KEY_ESCAPE)) {
         *aberto = false;
         return true;
     }
@@ -2590,6 +2592,52 @@ bool ParseInteiroPositivo(const char* texto, int* valor) {
     return true;
 }
 
+// Aceita "/xp 10000", "/xp10000", "xp 10000" — qualquer quantidade > 0.
+bool ParseComandoXp(const char* entrada, float* quantidade) {
+    while (*entrada == ' ' || *entrada == '\t') ++entrada;
+    if (*entrada == '/') ++entrada;
+
+    if (std::tolower(static_cast<unsigned char>(entrada[0])) != 'x' ||
+        std::tolower(static_cast<unsigned char>(entrada[1])) != 'p') {
+        return false;
+    }
+    entrada += 2;
+
+    while (*entrada == ' ' || *entrada == '\t') ++entrada;
+    if (*entrada == '+') ++entrada;
+
+    double n = 0.0;
+    bool viuDigito = false;
+    while (*entrada != '\0') {
+        if (*entrada >= '0' && *entrada <= '9') {
+            if (n < 1.0e12) n = n * 10.0 + static_cast<double>(*entrada - '0');
+            viuDigito = true;
+            ++entrada;
+            continue;
+        }
+        // Separadores de milhar (10.000 / 10,000)
+        if ((*entrada == '.' || *entrada == ',') && viuDigito) {
+            ++entrada;
+            continue;
+        }
+        if (*entrada == ' ' || *entrada == '\t') break;
+        return false;
+    }
+
+    while (*entrada == ' ' || *entrada == '\t') ++entrada;
+    if (*entrada != '\0' || !viuDigito || n <= 0.0) return false;
+
+    *quantidade = static_cast<float>(n);
+    return true;
+}
+
+bool PareceComandoXp(const char* entrada) {
+    while (*entrada == ' ' || *entrada == '\t') ++entrada;
+    if (*entrada == '/') ++entrada;
+    return std::tolower(static_cast<unsigned char>(entrada[0])) == 'x' &&
+           std::tolower(static_cast<unsigned char>(entrada[1])) == 'p';
+}
+
 void MatarTodosNpcs(Inimigo* inimigos, int quantidade) {
     for (int i = 0; i < quantidade; ++i) {
         if (!inimigos[i].vivo) continue;
@@ -2667,6 +2715,26 @@ void ExecutarComandoConsole(
         return;
     }
 
+    if (PareceComandoXp(console->texto)) {
+        if (!jogador) {
+            ConsoleDefinirMensagem(console, "jogador indisponivel");
+            return;
+        }
+        float quantidade = 0.0f;
+        if (!ParseComandoXp(console->texto, &quantidade)) {
+            ConsoleDefinirMensagem(console, "uso: /xp <quantidade>   ex: /xp 10000");
+            return;
+        }
+        const int nivelAntes = jogador->nivel;
+        const float xpAntes = jogador->xp;
+        GanharXp(jogador, quantidade);
+        ConsoleDefinirMensagem(console,
+            TextFormat("+%.0f xp | nv %d->%d | xp %.0f->%.0f | pts %d",
+                       quantidade, nivelAntes, jogador->nivel, xpAntes, jogador->xp,
+                       jogador->pontosDisponiveis));
+        return;
+    }
+
     ConsoleDefinirMensagem(console, "comando desconhecido");
 }
 
@@ -2689,7 +2757,7 @@ void AtualizarConsoleComandos(ConsoleComandos* console, float dt,
 
     if (!console->aberto) return;
 
-    if (IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_T)) {
+    if (IsKeyPressed(KEY_ESCAPE) || (IsKeyPressed(KEY_T) && console->comprimento == 0)) {
         console->aberto = false;
         ConsoleLimparTexto(console);
         while (GetCharPressed() != 0) {
@@ -2739,7 +2807,7 @@ void DesenharConsoleComandos(const ConsoleComandos& console) {
     DrawRectangle(0, y0, sw, painelH, Color{12, 14, 20, 235});
     DrawRectangle(0, y0, sw, 2, Color{90, 160, 255, 220});
 
-    DrawText("CONSOLE  |  /killallnpcs   /skipwave [n]   /build   |  Enter executa  Esc/T fecha",
+    DrawText("CONSOLE  |  /killallnpcs   /skipwave [n]   /xp <n>   /build   |  Enter executa  Esc/T fecha",
              16, y0 + 12, 16, Color{160, 190, 230, 255});
 
     DrawRectangle(12, y0 + 48, sw - 24, 36, Color{24, 28, 38, 255});
