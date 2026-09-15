@@ -12,9 +12,9 @@
 namespace {
 constexpr int kLarguraTela = 1280;
 constexpr int kAlturaTela = 720;
-constexpr float kVelocidadeJogador = 7.0f;
+constexpr float kVelocidadeJogador = 4.2f;
 constexpr float kVelocidadeCorrida = 12.5f;
-constexpr float kVelocidadeAgachado = 3.2f;
+constexpr float kVelocidadeAgachado = 2.4f;
 constexpr float kVelocidadeAr = 3.5f;
 constexpr float kAceleracaoAr = 8.0f;
 constexpr float kForcaPulo = 7.5f;
@@ -49,6 +49,10 @@ constexpr float kCooldownArremesso = 1.7f;
 constexpr float kAlcanceArremessoMin = 2.2f;
 constexpr float kAlcanceArremessoMax = 13.0f;
 constexpr float kAlturaInalcancavel = 0.65f;
+// Altura maxima que da pra "subir/descer" andando, sem pular (step).
+constexpr float kStepHeight = 0.70f;
+// Queda so mostra animacao de ar se estiver acima disso do chao.
+constexpr float kAlturaAnimQueda = 0.85f;
 constexpr int kMaxPedras = 48;
 constexpr float kXpPorKill = 40.0f;
 constexpr float kXpChefe = 150.0f;
@@ -376,12 +380,17 @@ float AlturaSoloEm(float x, float z, float raio, float yAtual) {
     float altura = 0.0f;
     ParaCadaObstaculoColisao([&](const Obstaculo& o) {
         if (!PontoSobreObstaculo(x, z, o, raio * 0.40f)) return;
-        // So pousa no topo se o pe esta perto/acima dele (nao puxa pro telhado)
-        if (yAtual + 0.55f < o.yTopo) return;
+        // So considera topo alcancavel pelo step (nao puxa pro telhado)
+        if (yAtual + kStepHeight + 0.05f < o.yTopo) return;
         if (yAtual + 0.15f < o.yBase) return;
         altura = std::max(altura, o.yTopo);
     });
     return altura;
+}
+
+bool ObstaculoDaPraStep(float pe, const Obstaculo& o) {
+    const float sobe = o.yTopo - pe;
+    return sobe > 0.02f && sobe <= kStepHeight;
 }
 
 void ResolverColisaoMapa(Vector3* pos, float raio) {
@@ -390,8 +399,10 @@ void ResolverColisaoMapa(Vector3* pos, float raio) {
     ParaCadaObstaculoColisao([&](const Obstaculo& o) {
         // Passa por baixo de pecas elevadas (telhado, lintel, lanternas)
         if (cabeca <= o.yBase + 0.02f) return;
-        // Anda em cima da peca
-        if (pe + 0.10f >= o.yTopo) return;
+        // Ja em cima da peca
+        if (pe + 0.02f >= o.yTopo) return;
+        // Degrau baixo: nao vira parede — o snap de solo sobe o pe logo em seguida
+        if (ObstaculoDaPraStep(pe, o)) return;
 
         const float minX = o.x - o.halfX;
         const float maxX = o.x + o.halfX;
@@ -424,6 +435,37 @@ void ResolverColisaoMapa(Vector3* pos, float raio) {
             pos->z += dz * push;
         }
     });
+}
+
+// Mantem no chao em degraus baixos (sobe/desce sem virar "queda").
+void AplicarSoloComStep(Vector3* pos, float raio, bool* noChao, float* velocidadeY, float* fasePulo) {
+    const float solo = AlturaSoloEm(pos->x, pos->z, raio, pos->y);
+    const float dy = pos->y - solo;
+
+    if (*velocidadeY <= 0.0f && dy <= kStepHeight) {
+        pos->y = solo;
+        *velocidadeY = 0.0f;
+        *noChao = true;
+        if (fasePulo) *fasePulo = 0.0f;
+        return;
+    }
+
+    if (dy > kStepHeight) {
+        *noChao = false;
+    }
+}
+
+void AjustarYInimigoAoSolo(Inimigo* inimigo, float raio, float dt) {
+    if (inimigo->voador) return;
+    const float solo = AlturaSoloEm(inimigo->posicao.x, inimigo->posicao.z, raio, inimigo->posicao.y);
+    const float dy = inimigo->posicao.y - solo;
+    if (dy <= kStepHeight) {
+        inimigo->posicao.y = solo;
+    } else if (dy > 0.0f) {
+        inimigo->posicao.y = std::max(solo, inimigo->posicao.y - 12.0f * dt);
+    } else {
+        inimigo->posicao.y = solo;
+    }
 }
 
 void SepararCirculosXZ(Vector3* a, float raioA, Vector3* b, float raioB) {
@@ -471,7 +513,9 @@ void ResolverColisaoEntidades(Personagem* jogador, Inimigo* inimigos, int quanti
     ResolverColisaoMapa(&jogador->posicao, kRaioJogador);
     for (int i = 0; i < quantidade; ++i) {
         if (!inimigos[i].vivo) continue;
-        ResolverColisaoMapa(&inimigos[i].posicao, RaioDoInimigo(inimigos[i]));
+        const float raioIni = RaioDoInimigo(inimigos[i]);
+        ResolverColisaoMapa(&inimigos[i].posicao, raioIni);
+        AjustarYInimigoAoSolo(&inimigos[i], raioIni, 0.0f);
         const float limite = gMapa.tamanho / 2.0f - 1.0f;
         inimigos[i].posicao.x = std::clamp(inimigos[i].posicao.x, -limite, limite);
         inimigos[i].posicao.z = std::clamp(inimigos[i].posicao.z, -limite, limite);
@@ -1071,17 +1115,20 @@ void DesenharPersonagem(const Personagem& personagem, float tempo) {
     const float idle = std::sin(tempo * 2.1f);
     const float respiracao = 1.0f + idle * 0.015f;
     const float a = personagem.agachar;
-    const float noAr = personagem.noChao ? 0.0f : 1.0f;
+    const float soloVis = AlturaSoloEm(personagem.posicao.x, personagem.posicao.z, kRaioJogador, personagem.posicao.y);
+    const float alturaAr = personagem.posicao.y - soloVis;
+    const bool poseQueda = !personagem.noChao && (alturaAr > kAlturaAnimQueda || personagem.velocidadeY > 1.2f);
+    const float noAr = poseQueda ? 1.0f : 0.0f;
     const float faseQueda = personagem.fasePulo;
     const float t = SmoothStep(faseQueda);
-    const float amp = personagem.noChao ? personagem.intensidadeAndar : 0.0f;
-    const float corrida = personagem.noChao ? personagem.intensidadeCorrida : 0.0f;
+    const float amp = (!poseQueda) ? personagem.intensidadeAndar : 0.0f;
+    const float corrida = (!poseQueda) ? personagem.intensidadeCorrida : 0.0f;
     const float moveF = personagem.moveFrente;
     const float moveL = personagem.moveLado;
     const float mira = personagem.miraTravada ? 1.0f : 0.0f;
     const float balancoIdle = idle * 2.0f * (1.0f - amp) * (1.0f - noAr);
     const float passo = personagem.cicloPasso;
-    const float bob = personagem.noChao
+    const float bob = !poseQueda
         ? (std::fabs(std::sin(passo)) * (0.06f + 0.08f * corrida - 0.03f * a) * amp + idle * 0.015f * (1.0f - amp))
         : 0.0f;
 
@@ -1916,6 +1963,7 @@ void DesenharBolasFogo(const BolaFogo* bolas, int maxBolas) {
 void SpawnerBonecoTreino(Inimigo* inimigo) {
     inimigo->posicao = Vector3{kBonecoX, 0.0f, kBonecoZ};
     ResolverColisaoMapa(&inimigo->posicao, kRaioInimigo);
+    AjustarYInimigoAoSolo(inimigo, kRaioInimigo, 0.0f);
     inimigo->vidaMax = kVidaBonecoMax;
     inimigo->vida = kVidaBonecoMax;
     inimigo->vivo = true;
@@ -2023,6 +2071,7 @@ void SpawnerInimigoDungeon(Inimigo* inimigo, float offsetAngulo, int dungeonId, 
     }
     ResolverColisaoMapa(&inimigo->posicao, kRaioInimigo);
     ConfigurarInimigoDungeon(inimigo, dungeonId, wave, false);
+    AjustarYInimigoAoSolo(inimigo, kRaioInimigo, 0.0f);
     inimigo->yaw = 180.0f;
 }
 
@@ -2030,6 +2079,7 @@ void SpawnerChefeDungeon(Inimigo* inimigo, int dungeonId, int wave) {
     inimigo->posicao = Vector3{0.0f, 0.0f, -8.0f};
     ResolverColisaoMapa(&inimigo->posicao, kRaioChefe);
     ConfigurarInimigoDungeon(inimigo, dungeonId, wave, true);
+    AjustarYInimigoAoSolo(inimigo, kRaioChefe, 0.0f);
     inimigo->yaw = 0.0f;
 }
 
@@ -2074,6 +2124,7 @@ int IniciarWaveDungeon(Inimigo* inimigos, int wave, int dungeonId) {
                                   &inimigos[j].posicao, RaioDoInimigo(inimigos[j]));
             }
             ResolverColisaoMapa(&inimigos[i].posicao, RaioDoInimigo(inimigos[i]));
+            AjustarYInimigoAoSolo(&inimigos[i], RaioDoInimigo(inimigos[i]), 0.0f);
         }
     }
     return quantidade;
@@ -2238,7 +2289,9 @@ void AtualizarInimigo(Inimigo* inimigo, Personagem* jogador, float dt, Pedra* pe
 
     if (inimigo->boneco) {
         inimigo->cicloPasso += dt * 1.2f;
-        ResolverColisaoMapa(&inimigo->posicao, RaioDoInimigo(*inimigo));
+        const float raioBoneco = RaioDoInimigo(*inimigo);
+        ResolverColisaoMapa(&inimigo->posicao, raioBoneco);
+        AjustarYInimigoAoSolo(inimigo, raioBoneco, dt);
         return;
     }
 
@@ -2423,6 +2476,7 @@ void AtualizarInimigo(Inimigo* inimigo, Personagem* jogador, float dt, Pedra* pe
     inimigo->posicao.x = std::clamp(inimigo->posicao.x, -limite, limite);
     inimigo->posicao.z = std::clamp(inimigo->posicao.z, -limite, limite);
     ResolverColisaoMapa(&inimigo->posicao, raioIni);
+    AjustarYInimigoAoSolo(inimigo, raioIni, dt);
 }
 
 bool GolpeAcertaInimigo(const Personagem& jogador, const Inimigo& inimigo) {
@@ -3022,6 +3076,7 @@ void VoltarParaCasa(
 int main() {
     SetConfigFlags(FLAG_VSYNC_HINT | FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE);
     InitWindow(kLarguraTela, kAlturaTela, "Jogo Novo - Casa Base");
+    SetExitKey(KEY_NULL); // Esc nao fecha o jogo; Backspace encerra (tratado no loop)
     SetTargetFPS(60);
     DisableCursor();
 
@@ -3096,6 +3151,11 @@ int main() {
     ConsoleLimparTexto(&console);
 
     while (!WindowShouldClose()) {
+        // Backspace encerra o programa (Esc fica so pra fechar menus/console)
+        if (IsKeyPressed(KEY_BACKSPACE) && !console.aberto) {
+            break;
+        }
+
         const float dt = GetFrameTime();
         const float tempo = static_cast<float>(GetTime());
         const bool morto = jogador.vida <= 0.0f;
@@ -3326,8 +3386,12 @@ int main() {
                 jogador.cicloPasso += dt * 1.6f;
             }
         } else {
-            jogador.intensidadeAndar = 0.0f;
-            jogador.intensidadeCorrida = 0.0f;
+            const float soloAr = AlturaSoloEm(jogador.posicao.x, jogador.posicao.z, kRaioJogador, jogador.posicao.y);
+            const bool quedaAlta = (jogador.posicao.y - soloAr) > kAlturaAnimQueda;
+            if (quedaAlta) {
+                jogador.intensidadeAndar = 0.0f;
+                jogador.intensidadeCorrida = 0.0f;
+            }
             if (temInput) {
                 const float alvoX = movimento.x * kVelocidadeAr;
                 const float alvoZ = movimento.z * kVelocidadeAr;
@@ -3415,32 +3479,15 @@ int main() {
         jogador.velocidadeY -= kGravidade * dt;
         jogador.posicao.y += jogador.velocidadeY * dt;
 
-        const float solo = AlturaSoloEm(jogador.posicao.x, jogador.posicao.z, kRaioJogador, jogador.posicao.y);
-        if (jogador.velocidadeY <= 0.0f && jogador.posicao.y <= solo) {
-            jogador.posicao.y = solo;
-            jogador.velocidadeY = 0.0f;
-            jogador.noChao = true;
-            jogador.fasePulo = 0.0f;
-        } else if (jogador.posicao.y > solo) {
-            jogador.noChao = false;
-            const float alvoFase = 0.5f - 0.5f * std::clamp(jogador.velocidadeY / kForcaPulo, -1.0f, 1.0f);
-            jogador.fasePulo += (alvoFase - jogador.fasePulo) * (1.0f - std::exp(-9.0f * dt));
-        }
-
         const float limite = gMapa.tamanho / 2.0f - kRaioJogador - 0.5f;
         jogador.posicao.x = std::clamp(jogador.posicao.x, -limite, limite);
         jogador.posicao.z = std::clamp(jogador.posicao.z, -limite, limite);
         ResolverColisaoMapa(&jogador.posicao, kRaioJogador);
-        // Reaplica solo apos empurrar XZ (pode ter saido da plataforma)
-        {
-            const float soloApos = AlturaSoloEm(jogador.posicao.x, jogador.posicao.z, kRaioJogador, jogador.posicao.y);
-            if (jogador.noChao && jogador.posicao.y > soloApos + 0.05f) {
-                jogador.noChao = false;
-            } else if (jogador.velocidadeY <= 0.0f && jogador.posicao.y < soloApos) {
-                jogador.posicao.y = soloApos;
-                jogador.velocidadeY = 0.0f;
-                jogador.noChao = true;
-            }
+        AplicarSoloComStep(&jogador.posicao, kRaioJogador, &jogador.noChao, &jogador.velocidadeY,
+                           &jogador.fasePulo);
+        if (!jogador.noChao) {
+            const float alvoFase = 0.5f - 0.5f * std::clamp(jogador.velocidadeY / kForcaPulo, -1.0f, 1.0f);
+            jogador.fasePulo += (alvoFase - jogador.fasePulo) * (1.0f - std::exp(-9.0f * dt));
         }
 
         if (!entradaBloqueada) {
