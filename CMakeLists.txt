@@ -32,7 +32,10 @@ endif()
 
 add_executable(${PROJECT_NAME}
     src/main.cpp
+    src/mapa.cpp
 )
+
+target_include_directories(${PROJECT_NAME} PRIVATE src)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE raylib)
 
@@ -50,5 +53,8 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_SOURCE_DIR}/assets"
         "$<TARGET_FILE_DIR:${PROJECT_NAME}>/assets"
-    COMMENT "Copiando assets para a pasta do executavel"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/maps"
+        "$<TARGET_FILE_DIR:${PROJECT_NAME}>/maps"
+    COMMENT "Copiando assets e maps para a pasta do executavel"
 )
