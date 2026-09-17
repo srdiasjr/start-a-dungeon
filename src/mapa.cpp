@@ -639,7 +639,14 @@ ObstaculoColisao PecaParaColisao(const PecaMapa& peca) {
 }
 
 bool PecaTemColisao(const PecaMapa& peca) {
-    return peca.tipo != TipoPecaMapa::Arbusto;
+    if (peca.tipo == TipoPecaMapa::Arbusto) return false;
+    const float minH = std::min(peca.halfX, peca.halfZ);
+    const float maxH = std::max(peca.halfX, peca.halfZ);
+    // Vidro / molduras finas (nao paredes longas)
+    if (minH <= 0.08f && maxH <= 0.55f) return false;
+    // Vigas tipicas em ambas as dimensoes (pilares ~0.14 ainda colidem)
+    if (peca.halfX <= 0.12f && peca.halfZ <= 0.12f) return false;
+    return true;
 }
 
 bool AabbSobrepoeXZ(float ax, float az, float ahx, float ahz,

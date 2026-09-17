@@ -1556,13 +1556,15 @@ void DesenharLuzesCasa(float tempo) {
         DrawSphere(p, 0.18f, Color{255, 190, 90, static_cast<unsigned char>(200 * pisca)});
         DrawSphere(p, 0.42f, Color{255, 140, 40, static_cast<unsigned char>(55 * pisca)});
     }
-    // Janelas iluminadas
-    DrawCube(Vector3{-7.05f, 1.65f, -2.5f}, 0.08f, 1.0f, 1.6f, Color{255, 200, 110, 90});
-    DrawCube(Vector3{7.05f, 1.65f, -2.5f}, 0.08f, 1.0f, 1.6f, Color{255, 200, 110, 90});
-    DrawCube(Vector3{-7.05f, 1.65f, 1.5f}, 0.08f, 1.0f, 1.6f, Color{255, 200, 110, 90});
-    DrawCube(Vector3{7.05f, 1.65f, 1.5f}, 0.08f, 1.0f, 1.6f, Color{255, 200, 110, 90});
+    // Janelas iluminadas (1F + 2F)
+    DrawCube(Vector3{-6.35f, 1.85f, -2.2f}, 0.08f, 1.1f, 1.4f, Color{255, 200, 110, 90});
+    DrawCube(Vector3{6.35f, 1.85f, -2.2f}, 0.08f, 1.1f, 1.4f, Color{255, 200, 110, 90});
+    DrawCube(Vector3{-6.35f, 1.85f, 1.8f}, 0.08f, 1.1f, 1.4f, Color{255, 200, 110, 90});
+    DrawCube(Vector3{6.35f, 1.85f, 1.8f}, 0.08f, 1.1f, 1.4f, Color{255, 200, 110, 90});
+    DrawCube(Vector3{-0.55f, 4.35f, 5.40f}, 0.7f, 0.85f, 0.08f, Color{255, 210, 130, 70});
+    DrawCube(Vector3{0.55f, 4.35f, 5.40f}, 0.7f, 0.85f, 0.08f, Color{255, 210, 130, 70});
     // Brilho da lareira
-    DrawSphere(Vector3{-5.6f, 0.7f, -5.5f}, 0.35f + 0.08f * pisca, Color{255, 120, 40, 100});
+    DrawSphere(Vector3{-4.8f, 0.85f, -4.8f}, 0.35f + 0.08f * pisca, Color{255, 120, 40, 100});
 }
 
 Rectangle AbaRet(float x, float y, float w, float h) {
